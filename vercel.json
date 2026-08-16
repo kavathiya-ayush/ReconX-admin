@@ -1,0 +1,14 @@
+{
+  "builds": [
+    {
+      "src": "cloud_server.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "cloud_server.py"
+    }
+  ]
+}
