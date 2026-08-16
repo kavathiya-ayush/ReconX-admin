@@ -6,8 +6,7 @@ import base64
 import requests as http_requests
 from flask import Flask, request, jsonify
 import hmac
-import razorpay
-
+import hashlib
 # Crypto Setup
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from cryptography.hazmat.primitives import serialization
@@ -77,8 +76,6 @@ def home():
 RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "rzp_test_TQ411tgX7goPzl")
 RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "")
 
-rzp_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
-
 @app.route("/api/create_order", methods=["POST"])
 def create_order():
     data = request.json
@@ -89,11 +86,20 @@ def create_order():
         return jsonify({"error": "Amount too low"}), 400
 
     try:
-        order = rzp_client.order.create({
-            "amount": amount_in_paise,
-            "currency": "INR",
-            "receipt": f"receipt_{uuid.uuid4().hex[:8]}"
-        })
+        resp = http_requests.post(
+            "https://api.razorpay.com/v1/orders",
+            json={
+                "amount": amount_in_paise,
+                "currency": "INR",
+                "receipt": f"receipt_{uuid.uuid4().hex[:8]}"
+            },
+            auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET),
+            timeout=10
+        )
+        if resp.status_code >= 400:
+            return jsonify({"error": f"Razorpay API Error: {resp.text}"}), 400
+            
+        order = resp.json()
         return jsonify({
             "success": True,
             "order_id": order['id'],
@@ -117,13 +123,14 @@ def verify_payment():
     if not all([razorpay_order_id, razorpay_payment_id, razorpay_signature]):
         return jsonify({"error": "Missing payment details"}), 400
         
-    try:
-        rzp_client.utility.verify_payment_signature({
-            'razorpay_order_id': razorpay_order_id,
-            'razorpay_payment_id': razorpay_payment_id,
-            'razorpay_signature': razorpay_signature
-        })
-    except razorpay.errors.SignatureVerificationError:
+    msg = f"{razorpay_order_id}|{razorpay_payment_id}"
+    expected_signature = hmac.new(
+        RAZORPAY_KEY_SECRET.encode('utf-8'),
+        msg.encode('utf-8'),
+        hashlib.sha256
+    ).hexdigest()
+    
+    if not hmac.compare_digest(expected_signature, razorpay_signature):
         return jsonify({"error": "Signature mismatch"}), 400
         
     # Generate Ed25519 Signed License
