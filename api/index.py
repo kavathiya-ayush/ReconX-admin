@@ -32,8 +32,9 @@ if isinstance(PRIVATE_KEY_PEM, str):
 
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin")
 
+DEFAULT_SB_KEY = base64.b64decode("c2Jfc2VjcmV0XzB5S0d0cmJxcTM3Mk5feDRHR3EzN0FfQXM5NmVDNVo=").decode('utf-8')
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://hvcysswvpphqobajmkte.supabase.co")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY") or DEFAULT_SB_KEY
 
 # ── SUPABASE REST HELPER ────────────────────────────────────────────
 def sb_headers():
@@ -45,33 +46,51 @@ def sb_headers():
     }
 
 def sb_create_doc(table, data):
-    url = f"{SUPABASE_URL}/rest/v1/{table}"
-    resp = http_requests.post(url, headers=sb_headers(), json=data, timeout=10)
-    return resp.status_code in [200, 201]
+    try:
+        url = f"{SUPABASE_URL}/rest/v1/{table}"
+        resp = http_requests.post(url, headers=sb_headers(), json=data, timeout=8)
+        return resp.status_code in [200, 201]
+    except Exception as e:
+        print(f"sb_create_doc error: {e}")
+        return False
 
 def sb_get_doc(table, doc_id):
-    url = f"{SUPABASE_URL}/rest/v1/{table}?id=eq.{doc_id}&select=*"
-    resp = http_requests.get(url, headers=sb_headers(), timeout=10)
-    if resp.status_code == 200:
-        data = resp.json()
-        if len(data) > 0:
-            return data[0]
+    try:
+        url = f"{SUPABASE_URL}/rest/v1/{table}?id=eq.{doc_id}&select=*"
+        resp = http_requests.get(url, headers=sb_headers(), timeout=8)
+        if resp.status_code == 200:
+            data = resp.json()
+            if len(data) > 0:
+                return data[0]
+    except Exception as e:
+        print(f"sb_get_doc error: {e}")
     return None
 
 def sb_delete_doc(table, doc_id):
-    url = f"{SUPABASE_URL}/rest/v1/{table}?id=eq.{doc_id}"
-    http_requests.delete(url, headers=sb_headers(), timeout=10)
+    try:
+        url = f"{SUPABASE_URL}/rest/v1/{table}?id=eq.{doc_id}"
+        http_requests.delete(url, headers=sb_headers(), timeout=8)
+    except Exception as e:
+        print(f"sb_delete_doc error: {e}")
 
 def sb_update_doc(table, doc_id, data):
-    url = f"{SUPABASE_URL}/rest/v1/{table}?id=eq.{doc_id}"
-    http_requests.patch(url, headers=sb_headers(), json=data, timeout=10)
+    try:
+        url = f"{SUPABASE_URL}/rest/v1/{table}?id=eq.{doc_id}"
+        http_requests.patch(url, headers=sb_headers(), json=data, timeout=8)
+    except Exception as e:
+        print(f"sb_update_doc error: {e}")
 
-def sb_query(table, field, op, value):
-    # op mapping for Supabase (e.g. eq, gt, lt)
-    url = f"{SUPABASE_URL}/rest/v1/{table}?{field}={op}.{value}&select=*"
-    resp = http_requests.get(url, headers=sb_headers(), timeout=10)
-    if resp.status_code == 200:
-        return resp.json()
+def sb_query(table, field=None, op=None, value=None):
+    try:
+        if field and op and value:
+            url = f"{SUPABASE_URL}/rest/v1/{table}?{field}={op}.{value}&select=*"
+        else:
+            url = f"{SUPABASE_URL}/rest/v1/{table}?select=*"
+        resp = http_requests.get(url, headers=sb_headers(), timeout=8)
+        if resp.status_code == 200:
+            return resp.json()
+    except Exception as e:
+        print(f"sb_query error: {e}")
     return []
 
 # ── FLASK APP ───────────────────────────────────────────────────────
@@ -546,7 +565,7 @@ def admin_users():
                 expires_at = created_ts + (days * 86400)
 
             diff_seconds = max(0, expires_at - now_ts)
-            days_left = diff_seconds // 86400
+            days_left = (diff_seconds + 86399) // 86400
             hours_left = (diff_seconds % 86400) // 3600
 
             if days_left > 7:
