@@ -704,10 +704,10 @@ def admin_revoke():
     except Exception as e:
         return f"Error: {e}", 500
 
-    # Redirect back to dashboard
+    # Redirect back to user directory
     return f"""
     <html>
-    <head><meta http-equiv="refresh" content="0; url=/admin?pwd={pwd}" /></head>
+    <head><meta http-equiv="refresh" content="0; url=/admin/users?pwd={pwd}" /></head>
     <body>Revoking...</body>
     </html>
     """
