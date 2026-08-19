@@ -100,6 +100,25 @@ app = Flask(__name__)
 def home():
     return "Server is running."
 
+@app.route("/api/latest-version", methods=["GET"])
+@app.route("/api/latest_version", methods=["GET"])
+def get_latest_version():
+    version = "1.7.5"
+    try:
+        resp = http_requests.get("https://raw.githubusercontent.com/kavathiya-ayush/CA-Converter-Releases/main/version.json", timeout=5)
+        if resp.status_code == 200:
+            version_data = resp.json()
+            version = version_data.get("version", "1.7.5")
+    except Exception:
+        pass
+
+    return jsonify({
+        "version": version,
+        "url": f"https://raw.githubusercontent.com/kavathiya-ayush/CA-Converter-Releases/main/CA_Bank_Converter.exe?t={int(time.time())}",
+        "download_url": f"https://raw.githubusercontent.com/kavathiya-ayush/CA-Converter-Releases/main/CA_Bank_Converter.exe?t={int(time.time())}",
+        "release_notes": "Added SBI WhatsApp Banking, ICICI Web Portal, and Central Bank of India support."
+    })
+
 RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "rzp_test_TR6dzZ6s5mNkvW")
 RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "j8tqtPAD1niv7C7EovUHBJrh")
 RAZORPAY_WEBHOOK_SECRET = os.environ.get("RAZORPAY_WEBHOOK_SECRET", "ReconX_Secret_Webhook_2026")
