@@ -153,11 +153,37 @@ def create_order():
             return jsonify({"error": f"Razorpay API Error: {resp.text}"}), 400
             
         order = resp.json()
+        payment_url = f"https://rzp.io/i/{order['id']}"
+
+        # Create official Gateway Payment Link for QR code scanning
+        try:
+            pl_resp = http_requests.post(
+                "https://api.razorpay.com/v1/payment_links",
+                json={
+                    "amount": amount_in_paise,
+                    "currency": "INR",
+                    "accept_partial": False,
+                    "description": f"ReconX {days} Days License ({machine_id})",
+                    "notes": {
+                        "machine_id": machine_id,
+                        "days": str(days),
+                        "order_id": order['id']
+                    }
+                },
+                auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET),
+                timeout=5
+            )
+            if pl_resp.status_code in [200, 201]:
+                payment_url = pl_resp.json().get("short_url") or payment_url
+        except Exception:
+            pass
+
         return jsonify({
             "success": True,
             "order_id": order['id'],
             "amount": amount_in_paise,
             "currency": "INR",
+            "payment_url": payment_url,
             "razorpay_key": RAZORPAY_KEY_ID
         })
     except Exception as e:
@@ -235,29 +261,64 @@ def check_order_status():
             auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET),
             timeout=10
         )
+        is_paid = False
+        captured_payment_id = None
         if resp.status_code == 200:
             order = resp.json()
             if order.get("status") == "paid":
-                # Generate Ed25519 Signed License
-                expiry_timestamp = int(time.time()) + (days * 24 * 60 * 60)
-                payload = {
-                    "client": "ReconX Pro User",
-                    "machine_id": machine_id,
-                    "expiry_timestamp": expiry_timestamp,
-                    "plan": f"{days} Days",
-                    "order_id": order_id
-                }
-                payload_str = json.dumps(payload)
-                private_key = serialization.load_pem_private_key(PRIVATE_KEY_PEM, password=None)
-                signature = private_key.sign(payload_str.encode('utf-8'))
-                signature_b64 = base64.b64encode(signature).decode('utf-8')
+                is_paid = True
+                
+        if not is_paid:
+            p_resp = http_requests.get(
+                f"https://api.razorpay.com/v1/orders/{order_id}/payments",
+                auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET),
+                timeout=5
+            )
+            if p_resp.status_code == 200:
+                for p in p_resp.json().get("items", []):
+                    if p.get("status") in ["captured", "authorized"]:
+                        is_paid = True
+                        captured_payment_id = p.get("id")
+                        break
 
-                return jsonify({
-                    "paid": True,
-                    "payload": payload_str,
-                    "signature": signature_b64,
-                    "order_id": order_id
+        if is_paid:
+            # Generate Ed25519 Signed License
+            expiry_timestamp = int(time.time()) + (days * 24 * 60 * 60)
+            pay_id = captured_payment_id or f"pay_qr_{uuid.uuid4().hex[:8]}"
+            payload = {
+                "client": "ReconX Pro User",
+                "machine_id": machine_id,
+                "expiry_timestamp": expiry_timestamp,
+                "plan": f"{days} Days",
+                "order_id": order_id,
+                "payment_id": pay_id
+            }
+            payload_str = json.dumps(payload)
+            private_key = serialization.load_pem_private_key(PRIVATE_KEY_PEM, password=None)
+            signature = private_key.sign(payload_str.encode('utf-8'))
+            signature_b64 = base64.b64encode(signature).decode('utf-8')
+
+            # Log to Supabase
+            try:
+                sb_create_doc("active_licenses", {
+                    "machine_id": machine_id,
+                    "nickname": "UPI Customer",
+                    "days": days,
+                    "status": "active",
+                    "order_id": order_id,
+                    "payment_id": pay_id
                 })
+            except Exception:
+                pass
+
+            return jsonify({
+                "paid": True,
+                "payload": payload_str,
+                "signature": signature_b64,
+                "order_id": order_id,
+                "payment_id": pay_id
+            })
+
         return jsonify({"paid": False})
     except Exception as e:
         return jsonify({"paid": False, "error": str(e)})
