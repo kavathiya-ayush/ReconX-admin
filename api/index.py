@@ -161,7 +161,7 @@ def create_order():
         order = resp.json()
         payment_url = f"https://rzp.io/i/{order['id']}"
 
-        hosted_payment_url = f"https://recon-x-admin.vercel.app/pay?order_id={order['id']}&machine_id={machine_id}&days={days}&amount={amount}"
+        hosted_payment_url = f"https://reconx-sigma.vercel.app/pay.html?order_id={order['id']}&machine_id={machine_id}&days={days}&amount={amount}&key={RAZORPAY_KEY_ID}"
         
         return jsonify({
             "success": True,
