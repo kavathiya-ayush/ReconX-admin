@@ -125,7 +125,7 @@ def get_latest_version():
         "release_notes": "UI polish with direct Razorpay payment flow and performance enhancements."
     })
 
-RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "rzp_test_TR6dzZ6s5mNkvW")
+RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "rzp_live_TSmj2315sRmP4a")
 RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "j8tqtPAD1niv7C7EovUHBJrh")
 RAZORPAY_WEBHOOK_SECRET = os.environ.get("RAZORPAY_WEBHOOK_SECRET", "ReconX_Secret_Webhook_2026")
 
