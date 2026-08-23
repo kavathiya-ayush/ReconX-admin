@@ -161,39 +161,137 @@ def create_order():
         order = resp.json()
         payment_url = f"https://rzp.io/i/{order['id']}"
 
-        # Create official Gateway Payment Link for QR code scanning
-        try:
-            pl_resp = http_requests.post(
-                "https://api.razorpay.com/v1/payment_links",
-                json={
-                    "amount": amount_in_paise,
-                    "currency": "INR",
-                    "accept_partial": False,
-                    "description": f"ReconX {days} Days License ({machine_id})",
-                    "notes": {
-                        "machine_id": machine_id,
-                        "days": str(days),
-                        "order_id": order['id']
-                    }
-                },
-                auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET),
-                timeout=5
-            )
-            if pl_resp.status_code in [200, 201]:
-                payment_url = pl_resp.json().get("short_url") or payment_url
-        except Exception:
-            pass
-
+        hosted_payment_url = f"https://recon-x-admin.vercel.app/pay?order_id={order['id']}&machine_id={machine_id}&days={days}&amount={amount}"
+        
         return jsonify({
             "success": True,
             "order_id": order['id'],
             "amount": amount_in_paise,
             "currency": "INR",
-            "payment_url": payment_url,
+            "payment_url": hosted_payment_url,
             "razorpay_key": RAZORPAY_KEY_ID
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.route("/pay", methods=["GET"])
+def hosted_pay():
+    order_id = request.args.get("order_id", "")
+    machine_id = request.args.get("machine_id", "UNKNOWN")
+    days = request.args.get("days", "30")
+    amount = request.args.get("amount", "349")
+    
+    try:
+        amount_in_paise = int(float(amount)) * 100
+    except Exception:
+        amount_in_paise = 34900
+
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ReconX Secure Payment</title>
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body {{ font-family: 'Plus Jakarta Sans', sans-serif; }}
+    </style>
+</head>
+<body class="bg-slate-950 text-white min-h-screen flex items-center justify-center p-4">
+    <div class="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl text-center relative overflow-hidden">
+        <div class="absolute -top-24 -left-24 w-48 h-48 bg-emerald-500/20 rounded-full blur-3xl pointer-events-none"></div>
+        <div class="absolute -bottom-24 -right-24 w-48 h-48 bg-blue-500/20 rounded-full blur-3xl pointer-events-none"></div>
+
+        <div class="w-16 h-16 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-2xl flex items-center justify-center mx-auto mb-5 shadow-inner">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+        </div>
+
+        <h1 class="text-2xl font-black tracking-tight text-white mb-1">ReconX License Activation</h1>
+        <p class="text-xs text-slate-400 mb-6">Device Auth Key: <span class="font-mono text-emerald-400 font-bold">{machine_id}</span></p>
+
+        <div class="bg-slate-800/80 border border-slate-700/80 rounded-2xl p-5 mb-6 text-left">
+            <div class="flex justify-between items-center mb-2">
+                <span class="text-xs text-slate-400 uppercase font-semibold tracking-wider">Selected Plan</span>
+                <span class="text-xs font-bold text-slate-200">{days} Days Unlimited</span>
+            </div>
+            <div class="flex justify-between items-center pt-2 border-t border-slate-700/60">
+                <span class="text-sm font-semibold text-slate-300">Total Payable</span>
+                <span class="text-2xl font-black text-white">₹{amount}</span>
+            </div>
+        </div>
+
+        <div id="paymentActionArea">
+            <button onclick="launchRazorpay()" id="payBtn" class="w-full bg-emerald-500 hover:bg-emerald-600 active:scale-98 text-slate-950 font-bold py-4 px-6 rounded-2xl transition-all shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 text-base cursor-pointer">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                <span>Pay ₹{amount} via UPI, QR & Cards</span>
+            </button>
+        </div>
+
+        <div id="successArea" class="hidden flex-col items-center justify-center p-4">
+            <div class="w-12 h-12 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mb-3">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg>
+            </div>
+            <h2 class="text-xl font-bold text-white mb-1">Payment Successful!</h2>
+            <p class="text-xs text-emerald-400 mb-2">License activated for Machine ID: {machine_id}</p>
+            <p class="text-xs text-slate-400">You can now close this tab. ReconX on your PC is unlocked!</p>
+        </div>
+
+        <p class="text-[11px] text-slate-500 mt-6 flex items-center justify-center gap-1.5">
+            <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"></path></svg>
+            <span>Secured 256-bit Banking Gateway • Official Razorpay Partner</span>
+        </p>
+    </div>
+
+    <script>
+        function launchRazorpay() {{
+            const options = {{
+                key: "{RAZORPAY_KEY_ID}",
+                amount: "{amount_in_paise}",
+                currency: "INR",
+                name: "ReconX Software",
+                description: "{days} Days License for {machine_id}",
+                order_id: "{order_id}",
+                prefill: {{
+                    contact: "",
+                    email: ""
+                }},
+                theme: {{
+                    color: "#10b981"
+                }},
+                handler: async function(response) {{
+                    document.getElementById('paymentActionArea').classList.add('hidden');
+                    document.getElementById('successArea').classList.remove('hidden');
+                    document.getElementById('successArea').classList.add('flex');
+                    
+                    try {{
+                        await fetch('/api/verify_payment', {{
+                            method: 'POST',
+                            headers: {{ 'Content-Type': 'application/json' }},
+                            body: JSON.stringify({{
+                                razorpay_order_id: response.razorpay_order_id,
+                                razorpay_payment_id: response.razorpay_payment_id,
+                                razorpay_signature: response.razorpay_signature,
+                                machine_id: "{machine_id}",
+                                days: {days}
+                            }})
+                        }});
+                    }} catch(e) {{
+                        console.error(e);
+                    }}
+                }}
+            }};
+            const rzp = new Razorpay(options);
+            rzp.open();
+        }}
+        
+        window.addEventListener('DOMContentLoaded', () => {{
+            setTimeout(launchRazorpay, 350);
+        }});
+    </script>
+</body>
+</html>"""
 
 @app.route("/api/verify_payment", methods=["POST"])
 def verify_payment():
