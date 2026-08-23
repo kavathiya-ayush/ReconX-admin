@@ -522,8 +522,12 @@ def check_revocation():
         return jsonify({"revoked": False})
         
     docs = sb_query("active_licenses", "machine_id", "eq", machine_id)
-    # Check if ANY license for this machine is revoked
-    is_revoked = any(d.get("status") == "revoked" for d in docs)
+    if not docs:
+        return jsonify({"revoked": False})
+    
+    # Check the most recent license entry status for this machine
+    docs_sorted = sorted(docs, key=lambda x: x.get("created_at", ""), reverse=True)
+    is_revoked = (docs_sorted[0].get("status") == "revoked")
     
     return jsonify({"revoked": is_revoked})
 
