@@ -103,20 +103,26 @@ def home():
 @app.route("/api/latest-version", methods=["GET"])
 @app.route("/api/latest_version", methods=["GET"])
 def get_latest_version():
-    version = "1.7.5"
+    version = "2.4.1"
     try:
-        resp = http_requests.get("https://raw.githubusercontent.com/kavathiya-ayush/CA-Converter-Releases/main/version.json", timeout=5)
+        now_ts = int(time.time())
+        resp = http_requests.get(
+            f"https://raw.githubusercontent.com/kavathiya-ayush/CA-Converter-Releases/main/version.json?t={now_ts}",
+            headers={"Cache-Control": "no-cache", "Pragma": "no-cache"},
+            timeout=5
+        )
         if resp.status_code == 200:
             version_data = resp.json()
-            version = version_data.get("version", "1.7.5")
+            version = version_data.get("version", version)
     except Exception:
         pass
 
+    now_ts = int(time.time())
     return jsonify({
         "version": version,
-        "url": f"https://raw.githubusercontent.com/kavathiya-ayush/CA-Converter-Releases/main/CA_Bank_Converter.exe?t={int(time.time())}",
-        "download_url": f"https://raw.githubusercontent.com/kavathiya-ayush/CA-Converter-Releases/main/CA_Bank_Converter.exe?t={int(time.time())}",
-        "release_notes": "Added SBI WhatsApp Banking, ICICI Web Portal, and Central Bank of India support."
+        "url": f"https://raw.githubusercontent.com/kavathiya-ayush/CA-Converter-Releases/main/CA_Bank_Converter.exe?t={now_ts}",
+        "download_url": f"https://raw.githubusercontent.com/kavathiya-ayush/CA-Converter-Releases/main/CA_Bank_Converter.exe?t={now_ts}",
+        "release_notes": "UI polish with direct Razorpay payment flow and performance enhancements."
     })
 
 RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "rzp_test_TR6dzZ6s5mNkvW")
