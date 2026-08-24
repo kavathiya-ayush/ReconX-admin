@@ -32,12 +32,17 @@ if isinstance(PRIVATE_KEY_PEM, str):
 
 def get_private_key():
     raw = os.environ.get("PRIVATE_KEY_PEM")
-    if not raw:
-        raw = PRIVATE_KEY_PEM_DEFAULT
-    if isinstance(raw, bytes):
-        raw = raw.decode('utf-8', errors='ignore')
-    raw = raw.replace('\\n', chr(10)).replace('\n', chr(10)).strip()
-    return serialization.load_pem_private_key(raw.encode('utf-8'), password=None)
+    if raw:
+        try:
+            if isinstance(raw, bytes):
+                raw_str = raw.decode("utf-8", errors="ignore")
+            else:
+                raw_str = str(raw)
+            clean_str = raw_str.strip().strip('"').strip("'").replace("\\n", chr(10)).replace("\n", chr(10)).strip()
+            return serialization.load_pem_private_key(clean_str.encode("utf-8"), password=None)
+        except Exception as err:
+            print("Failed to load custom env PRIVATE_KEY_PEM, falling back to default:", err)
+    return serialization.load_pem_private_key(PRIVATE_KEY_PEM_DEFAULT, password=None)
 
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin")
 
