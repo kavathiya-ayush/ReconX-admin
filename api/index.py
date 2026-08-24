@@ -30,6 +30,17 @@ PRIVATE_KEY_PEM = os.environ.get("PRIVATE_KEY_PEM", PRIVATE_KEY_PEM_DEFAULT)
 if isinstance(PRIVATE_KEY_PEM, str):
     PRIVATE_KEY_PEM = PRIVATE_KEY_PEM.encode()
 
+def get_private_key():
+    raw = os.environ.get("PRIVATE_KEY_PEM")
+    if not raw:
+        raw = PRIVATE_KEY_PEM_DEFAULT
+    if isinstance(raw, bytes):
+        raw = raw.decode('utf-8', errors='ignore')
+    raw = raw.replace('\\n', '
+').replace('\n', '
+').strip()
+    return serialization.load_pem_private_key(raw.encode('utf-8'), password=None)
+
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin")
 
 DEFAULT_SB_KEY = base64.b64decode("c2Jfc2VjcmV0XzB5S0d0cmJxcTM3Mk5feDRHR3EzN0FfQXM5NmVDNVo=").decode('utf-8')
@@ -328,7 +339,7 @@ def verify_payment():
         "payment_id": razorpay_payment_id
     }
     payload_str = json.dumps(payload)
-    private_key = serialization.load_pem_private_key(PRIVATE_KEY_PEM, password=None)
+    private_key = get_private_key()
     signature = private_key.sign(payload_str.encode('utf-8'))
     signature_b64 = base64.b64encode(signature).decode('utf-8')
     
@@ -438,7 +449,7 @@ def check_order_status():
                 "payment_id": pay_id
             }
             payload_str = json.dumps(payload)
-            private_key = serialization.load_pem_private_key(PRIVATE_KEY_PEM, password=None)
+            private_key = get_private_key()
             signature = private_key.sign(payload_str.encode('utf-8'))
             signature_b64 = base64.b64encode(signature).decode('utf-8')
 
@@ -1017,7 +1028,7 @@ def exchange():
     
     payload_str = json.dumps(payload)
     
-    private_key = serialization.load_pem_private_key(PRIVATE_KEY_PEM, password=None)
+    private_key = get_private_key()
     signature = private_key.sign(payload_str.encode('utf-8'))
     signature_b64 = base64.b64encode(signature).decode('utf-8')
     
