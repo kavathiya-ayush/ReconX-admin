@@ -370,8 +370,8 @@ def cancel_payment_order():
                 sb_create_doc("active_licenses", {
                     "machine_id": machine_id,
                     "nickname": cancel_tag,
-                    "status": "cancelled",
-                    "days": 0
+                    "days": 0,
+                    "status": "cancelled"
                 })
         except Exception as e:
             print("Supabase cancel error:", e)
@@ -446,11 +446,9 @@ def check_order_status():
             try:
                 sb_create_doc("active_licenses", {
                     "machine_id": machine_id,
-                    "nickname": "UPI Customer",
+                    "nickname": f"PRO_{order_id}_UPI",
                     "days": days,
-                    "status": "active",
-                    "order_id": order_id,
-                    "payment_id": pay_id
+                    "status": "active"
                 })
             except Exception:
                 pass
