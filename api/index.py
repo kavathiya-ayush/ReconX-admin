@@ -364,17 +364,13 @@ def cancel_payment_order():
     machine_id = data.get("machine_id", "UNKNOWN")
     if order_id:
         try:
-            docs = sb_query("active_licenses", "order_id", "eq", order_id)
-            if docs:
-                for doc in docs:
-                    if doc.get("status") != "active":
-                        sb_update_doc("active_licenses", doc["id"], {"status": "cancelled"})
-            else:
+            cancel_tag = f"CANCEL_{order_id}"
+            docs = sb_query("active_licenses", "nickname", "eq", cancel_tag)
+            if not docs:
                 sb_create_doc("active_licenses", {
                     "machine_id": machine_id,
-                    "order_id": order_id,
+                    "nickname": cancel_tag,
                     "status": "cancelled",
-                    "nickname": "Cancelled Session",
                     "days": 0
                 })
         except Exception as e:
@@ -394,13 +390,12 @@ def check_order_status():
     if not order_id:
         return jsonify({"paid": False, "error": "Order ID required"}), 400
 
-    # 1. Check Supabase persistent status across serverless instances
+    # 1. Check Supabase persistent cancellation status across serverless instances
     try:
-        docs = sb_query("active_licenses", "order_id", "eq", order_id)
+        cancel_tag = f"CANCEL_{order_id}"
+        docs = sb_query("active_licenses", "nickname", "eq", cancel_tag)
         if docs:
-            for doc in docs:
-                if doc.get("status") == "cancelled":
-                    return jsonify({"paid": False, "cancelled": True})
+            return jsonify({"paid": False, "cancelled": True})
     except Exception as e:
         print("Supabase status check error:", e)
 
