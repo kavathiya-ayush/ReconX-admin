@@ -351,15 +351,39 @@ def verify_payment():
     })
 
 
-CANCELLED_ORDERS = set()
-
-@app.route("/api/cancel_payment_order", methods=["POST"])
+@app.route("/api/cancel_payment_order", methods=["POST", "OPTIONS"])
 def cancel_payment_order():
+    if request.method == "OPTIONS":
+        resp = jsonify({"success": True})
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        resp.headers["Access-Control-Allow-Headers"] = "*"
+        resp.headers["Access-Control-Allow-Methods"] = "*"
+        return resp
     data = request.json or {}
     order_id = data.get("order_id")
+    machine_id = data.get("machine_id", "UNKNOWN")
     if order_id:
-        CANCELLED_ORDERS.add(order_id)
-    return jsonify({"success": True, "cancelled": True})
+        try:
+            docs = sb_query("active_licenses", "order_id", "eq", order_id)
+            if docs:
+                for doc in docs:
+                    if doc.get("status") != "active":
+                        sb_update_doc("active_licenses", doc["id"], {"status": "cancelled"})
+            else:
+                sb_create_doc("active_licenses", {
+                    "machine_id": machine_id,
+                    "order_id": order_id,
+                    "status": "cancelled",
+                    "nickname": "Cancelled Session",
+                    "days": 0
+                })
+        except Exception as e:
+            print("Supabase cancel error:", e)
+    resp = jsonify({"success": True, "cancelled": True})
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Access-Control-Allow-Headers"] = "*"
+    resp.headers["Access-Control-Allow-Methods"] = "*"
+    return resp
 
 @app.route("/api/check_order_status", methods=["GET"])
 def check_order_status():
@@ -370,8 +394,15 @@ def check_order_status():
     if not order_id:
         return jsonify({"paid": False, "error": "Order ID required"}), 400
 
-    if order_id in CANCELLED_ORDERS:
-        return jsonify({"paid": False, "cancelled": True})
+    # 1. Check Supabase persistent status across serverless instances
+    try:
+        docs = sb_query("active_licenses", "order_id", "eq", order_id)
+        if docs:
+            for doc in docs:
+                if doc.get("status") == "cancelled":
+                    return jsonify({"paid": False, "cancelled": True})
+    except Exception as e:
+        print("Supabase status check error:", e)
 
     try:
         resp = http_requests.get(
