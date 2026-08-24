@@ -36,9 +36,7 @@ def get_private_key():
         raw = PRIVATE_KEY_PEM_DEFAULT
     if isinstance(raw, bytes):
         raw = raw.decode('utf-8', errors='ignore')
-    raw = raw.replace('\\n', '
-').replace('\n', '
-').strip()
+    raw = raw.replace('\\n', chr(10)).replace('\n', chr(10)).strip()
     return serialization.load_pem_private_key(raw.encode('utf-8'), password=None)
 
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin")
