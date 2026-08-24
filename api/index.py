@@ -350,6 +350,17 @@ def verify_payment():
         "signature": signature_b64
     })
 
+
+CANCELLED_ORDERS = set()
+
+@app.route("/api/cancel_payment_order", methods=["POST"])
+def cancel_payment_order():
+    data = request.json or {}
+    order_id = data.get("order_id")
+    if order_id:
+        CANCELLED_ORDERS.add(order_id)
+    return jsonify({"success": True, "cancelled": True})
+
 @app.route("/api/check_order_status", methods=["GET"])
 def check_order_status():
     order_id = request.args.get("order_id")
@@ -358,6 +369,9 @@ def check_order_status():
     
     if not order_id:
         return jsonify({"paid": False, "error": "Order ID required"}), 400
+
+    if order_id in CANCELLED_ORDERS:
+        return jsonify({"paid": False, "cancelled": True})
 
     try:
         resp = http_requests.get(
