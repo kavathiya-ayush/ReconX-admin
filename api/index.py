@@ -622,6 +622,74 @@ HTML_HEAD = """
     </head>
 """
 
+
+@app.route("/api/sync_license", methods=["GET", "POST", "OPTIONS"])
+def sync_license():
+    """Automatically syncs and downloads active license for a machine ID on startup."""
+    if request.method == "OPTIONS":
+        resp = jsonify({"success": True})
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        resp.headers["Access-Control-Allow-Headers"] = "*"
+        resp.headers["Access-Control-Allow-Methods"] = "*"
+        return resp
+        
+    machine_id = request.args.get("machine_id")
+    if not machine_id and request.json:
+        machine_id = request.json.get("machine_id")
+        
+    if not machine_id:
+        return jsonify({"active": False, "error": "machine_id required"}), 400
+    
+    try:
+        docs = sb_query("active_licenses", "machine_id", "eq", machine_id)
+        active_docs = [d for d in docs if d.get("status") == "active"]
+        if not active_docs:
+            return jsonify({"active": False})
+        
+        doc = active_docs[0]
+        days = int(doc.get("days", 30))
+        now_ts = int(time.time())
+        
+        raw_created = doc.get("created_at")
+        created_ts = now_ts
+        if isinstance(raw_created, str):
+            try:
+                clean_iso = raw_created.replace('Z', '+00:00')
+                created_ts = int(datetime.fromisoformat(clean_iso).timestamp())
+            except Exception:
+                created_ts = now_ts
+        
+        expires_at = created_ts + (days * 86400)
+        if expires_at <= now_ts:
+            return jsonify({"active": False, "expired": True})
+            
+        days_left = max(1, (expires_at - now_ts + 86399) // 86400)
+        
+        payload = {
+            "client": "ReconX Pro User",
+            "machine_id": machine_id,
+            "expiry_timestamp": expires_at,
+            "plan": f"{days} Days",
+            "order_id": doc.get("nickname", "ONLINE_SYNC"),
+            "payment_id": "pay_cloud_sync"
+        }
+        payload_str = json.dumps(payload)
+        private_key = get_private_key()
+        signature = private_key.sign(payload_str.encode('utf-8'))
+        signature_b64 = base64.b64encode(signature).decode('utf-8')
+        
+        resp = jsonify({
+            "active": True,
+            "payload": payload_str,
+            "signature": signature_b64,
+            "days_left": days_left
+        })
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        return resp
+    except Exception as e:
+        print("sync_license error:", e)
+        return jsonify({"active": False, "error": str(e)}), 500
+
 @app.route("/admin", methods=["GET"])
 def admin_dashboard():
     pwd = request.args.get("pwd")
