@@ -792,7 +792,7 @@ def admin_users():
         </html>
         """
 
-        now_ts = int(time.time())
+    now_ts = int(time.time())
     rows_html = ""
     total_users = 0
 
