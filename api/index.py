@@ -1091,6 +1091,8 @@ def admin_manual_generate():
             "machine_id": machine_id,
             "days": days
         })
+        # Un-revoke / activate machine in Supabase
+        sb_upsert_active_license(machine_id, f"Manual Key ({short_code})", days)
     except Exception as e:
         return f"Error: {e}", 500
 
