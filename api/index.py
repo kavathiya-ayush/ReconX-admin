@@ -94,6 +94,32 @@ def sb_update_doc(table, doc_id, data):
     except Exception as e:
         print(f"sb_update_doc error: {e}")
 
+def sb_upsert_active_license(machine_id, nickname, days):
+    try:
+        existing = sb_query("active_licenses", "machine_id", "eq", machine_id)
+        if existing:
+            # Update the first existing active record
+            doc_id = existing[0]["id"]
+            sb_update_doc("active_licenses", doc_id, {
+                "nickname": nickname,
+                "days": days,
+                "status": "active"
+            })
+            # Clean any other duplicate records for this machine
+            for dup in existing[1:]:
+                sb_delete_doc("active_licenses", dup["id"])
+            return True
+        else:
+            return sb_create_doc("active_licenses", {
+                "machine_id": machine_id,
+                "nickname": nickname,
+                "days": days,
+                "status": "active"
+            })
+    except Exception as e:
+        print(f"sb_upsert_active_license error: {e}")
+        return False
+
 def sb_query(table, field=None, op=None, value=None):
     try:
         if field and op and value:
@@ -458,12 +484,7 @@ def check_order_status():
 
             # Log to Supabase
             try:
-                sb_create_doc("active_licenses", {
-                    "machine_id": machine_id,
-                    "nickname": f"PRO_{order_id}_UPI",
-                    "days": days,
-                    "status": "active"
-                })
+                sb_upsert_active_license(machine_id, f"PRO_{order_id}_UPI", days)
             except Exception:
                 pass
 
@@ -771,14 +792,22 @@ def admin_users():
         </html>
         """
 
-    now_ts = int(time.time())
+        now_ts = int(time.time())
     rows_html = ""
     total_users = 0
 
     try:
         docs = sb_query("active_licenses", "status", "eq", "active")
-        total_users = len(docs)
-        for p in docs:
+        # Deduplicate docs by machine_id (keeping latest)
+        unique_docs = {}
+        for d in docs:
+            m_id = d.get("machine_id", "UNKNOWN")
+            unique_docs[m_id] = d
+        
+        docs_list = list(unique_docs.values())
+        total_users = len(docs_list)
+
+        for p in docs_list:
             days = int(p.get("days", 30))
             raw_created = p.get("created_at")
             created_ts = now_ts
@@ -809,22 +838,41 @@ def admin_users():
             hours_left = (diff_seconds % 86400) // 3600
 
             if days_left > 7:
-                badge = f'<span class="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/20 text-emerald-400 rounded-full text-xs font-bold border border-emerald-500/30"><span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> {days_left} Days Left</span>'
+                badge = f'<span class="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/15 text-emerald-400 rounded-full text-xs font-bold border border-emerald-500/30 whitespace-nowrap"><span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> {days_left} Days Left</span>'
             elif days_left > 0:
-                badge = f'<span class="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/20 text-amber-400 rounded-full text-xs font-bold border border-amber-500/30">⚡ {days_left}d {hours_left}h Left</span>'
+                badge = f'<span class="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/15 text-amber-400 rounded-full text-xs font-bold border border-amber-500/30 whitespace-nowrap">⚡ {days_left}d {hours_left}h Left</span>'
             else:
-                badge = f'<span class="inline-flex items-center gap-1.5 px-3 py-1 bg-red-500/20 text-red-400 rounded-full text-xs font-bold border border-red-500/30">🔴 Expiring Today</span>'
+                badge = f'<span class="inline-flex items-center gap-1.5 px-3 py-1 bg-red-500/15 text-red-400 rounded-full text-xs font-bold border border-red-500/30 whitespace-nowrap">🔴 Expiring Today</span>'
+
+            # Clean Display Names
+            raw_nick = p.get('nickname', 'ReconX Pro User')
+            display_title = raw_nick
+            extracted_order = p.get('order_id', 'N/A')
+            if 'order_' in raw_nick:
+                display_title = "Verified Buyer (Razorpay UPI)"
+                import re
+                m = re.search(r'(order_[A-Za-z0-9]+)', raw_nick)
+                if m:
+                    extracted_order = m.group(1)
+
+            # Elegant Plan Badge
+            if days >= 90:
+                plan_badge = '<span class="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-500/15 text-blue-300 rounded-full text-xs font-bold border border-blue-500/30 whitespace-nowrap"><span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span> 3 Months (90d)</span>'
+            elif days >= 60:
+                plan_badge = '<span class="inline-flex items-center gap-1.5 px-3 py-1 bg-purple-500/15 text-purple-300 rounded-full text-xs font-bold border border-purple-500/30 whitespace-nowrap"><span class="w-1.5 h-1.5 rounded-full bg-purple-400"></span> 2 Months (60d)</span>'
+            else:
+                plan_badge = '<span class="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-500/15 text-indigo-300 rounded-full text-xs font-bold border border-indigo-500/30 whitespace-nowrap"><span class="w-1.5 h-1.5 rounded-full bg-indigo-400"></span> 1 Month (30d)</span>'
 
             rows_html += f"""
-            <tr class="user-row border-b border-slate-800/80 hover:bg-slate-800/40 transition-colors" data-search="{p.get('nickname','').lower()} {p.get('machine_id','').lower()}">
+            <tr class="user-row border-b border-slate-800/80 hover:bg-slate-800/40 transition-colors" data-search="{raw_nick.lower()} {p.get('machine_id','').lower()}">
                 <td class="px-6 py-4">
                     <div class="flex items-center gap-3">
                         <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center font-bold text-white text-sm shadow-md">
-                            {p.get('nickname', 'U')[0].upper()}
+                            {display_title[0].upper()}
                         </div>
                         <div>
-                            <div class="font-bold text-white text-sm">{p.get('nickname', 'ReconX Pro User')}</div>
-                            <div class="text-[11px] text-slate-400 font-mono">Order: {p.get('order_id', 'N/A')}</div>
+                            <div class="font-bold text-white text-sm">{display_title}</div>
+                            <div class="text-[11px] text-slate-400 font-mono">Order: {extracted_order}</div>
                         </div>
                     </div>
                 </td>
@@ -837,19 +885,19 @@ def admin_users():
                     </div>
                 </td>
                 <td class="px-6 py-4">
-                    <span class="px-2.5 py-1 rounded-lg bg-indigo-500/20 text-indigo-300 font-mono text-xs font-semibold border border-indigo-500/30">{p.get('days')} Days</span>
+                    {plan_badge}
                 </td>
                 <td class="px-6 py-4">
                     {badge}
                 </td>
-                <td class="px-6 py-4 text-xs text-slate-400">
+                <td class="px-6 py-4 text-xs text-slate-400 whitespace-nowrap">
                     {date_display}
                 </td>
                 <td class="px-6 py-4 text-right">
-                    <form action="/admin/revoke" method="POST" class="inline m-0" onsubmit="return confirm('Are you sure you want to revoke license for {p.get('nickname')}?');">
+                    <form action="/admin/revoke" method="POST" class="inline m-0" onsubmit="return confirm('Are you sure you want to revoke license for {display_title}?');">
                         <input type="hidden" name="pwd" value="{pwd}">
                         <input type="hidden" name="doc_id" value="{p.get('id')}">
-                        <button type="submit" class="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 rounded-xl text-xs font-bold border border-red-500/30 transition-colors">
+                        <button type="submit" class="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 rounded-xl text-xs font-bold border border-red-500/30 transition-colors cursor-pointer">
                             Revoke
                         </button>
                     </form>
