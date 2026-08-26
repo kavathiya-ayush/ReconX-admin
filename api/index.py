@@ -94,28 +94,35 @@ def sb_update_doc(table, doc_id, data):
     except Exception as e:
         print(f"sb_update_doc error: {e}")
 
-def sb_upsert_active_license(machine_id, nickname, days):
+def sb_upsert_active_license(machine_id, nickname, days, order_id=None):
     try:
+        now_iso = datetime.utcnow().isoformat() + "Z"
         existing = sb_query("active_licenses", "machine_id", "eq", machine_id)
         if existing:
-            # Update the first existing active record
             doc_id = existing[0]["id"]
-            sb_update_doc("active_licenses", doc_id, {
+            update_data = {
                 "nickname": nickname,
                 "days": days,
-                "status": "active"
-            })
-            # Clean any other duplicate records for this machine
+                "status": "active",
+                "created_at": now_iso
+            }
+            if order_id:
+                update_data["order_id"] = order_id
+            sb_update_doc("active_licenses", doc_id, update_data)
             for dup in existing[1:]:
                 sb_delete_doc("active_licenses", dup["id"])
             return True
         else:
-            return sb_create_doc("active_licenses", {
+            create_data = {
                 "machine_id": machine_id,
                 "nickname": nickname,
                 "days": days,
-                "status": "active"
-            })
+                "status": "active",
+                "created_at": now_iso
+            }
+            if order_id:
+                create_data["order_id"] = order_id
+            return sb_create_doc("active_licenses", create_data)
     except Exception as e:
         print(f"sb_upsert_active_license error: {e}")
         return False
@@ -484,7 +491,7 @@ def check_order_status():
 
             # Log to Supabase
             try:
-                sb_upsert_active_license(machine_id, f"PRO_{order_id}_UPI", days)
+                sb_upsert_active_license(machine_id, f"PRO_{order_id}_UPI", days, order_id=order_id)
             except Exception:
                 pass
 
