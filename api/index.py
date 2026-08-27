@@ -100,8 +100,14 @@ def sb_upsert_active_license(machine_id, nickname, days, order_id=None):
         existing = sb_query("active_licenses", "machine_id", "eq", machine_id)
         if existing:
             doc_id = existing[0]["id"]
+            existing_nick = existing[0].get("nickname") or ""
+            # Preserve user-provided name if existing has a real nickname and incoming is generic
+            final_nick = nickname
+            if existing_nick and not existing_nick.startswith("PRO_order_") and (not nickname or nickname.startswith("PRO_order_")):
+                final_nick = existing_nick
+            
             update_data = {
-                "nickname": nickname,
+                "nickname": final_nick,
                 "days": days,
                 "status": "active",
                 "created_at": now_iso
@@ -115,7 +121,7 @@ def sb_upsert_active_license(machine_id, nickname, days, order_id=None):
         else:
             create_data = {
                 "machine_id": machine_id,
-                "nickname": nickname,
+                "nickname": nickname or "User",
                 "days": days,
                 "status": "active",
                 "created_at": now_iso
@@ -548,6 +554,47 @@ def razorpay_webhook():
         return jsonify({"status": "ok"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/set_nickname", methods=["POST", "OPTIONS"])
+def set_nickname():
+    if request.method == "OPTIONS":
+        resp = jsonify({"success": True})
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        resp.headers["Access-Control-Allow-Headers"] = "*"
+        resp.headers["Access-Control-Allow-Methods"] = "*"
+        return resp
+        
+    data = request.json or {}
+    machine_id = data.get("machine_id")
+    nickname = data.get("nickname", "").strip()
+    
+    if not machine_id or not nickname:
+        return jsonify({"error": "machine_id and nickname required"}), 400
+        
+    try:
+        existing = sb_query("active_licenses", "machine_id", "eq", machine_id)
+        if existing:
+            doc_id = existing[0]["id"]
+            sb_update_doc("active_licenses", doc_id, {
+                "nickname": nickname
+            })
+            for dup in existing[1:]:
+                sb_delete_doc("active_licenses", dup["id"])
+        else:
+            now_iso = datetime.utcnow().isoformat() + "Z"
+            sb_create_doc("active_licenses", {
+                "machine_id": machine_id,
+                "nickname": nickname,
+                "days": 0,
+                "status": "inactive",
+                "created_at": now_iso
+            })
+        resp = jsonify({"success": True, "nickname": nickname})
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        return resp
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/register_active_license", methods=["POST"])
 def register_active_license():
